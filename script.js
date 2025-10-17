@@ -1,35 +1,29 @@
-/*-------------------------------------------------------------------------
-10_CameraCircle.js
+/*-----------------------------------------------------------------------------------
+13_Texture.js
 
 - Viewing a 3D unit cube at origin with perspective projection
-- The cube is rotating about the x-axis with given constant speed
-- A camera is rotating around the origin through the circle of radius 5
-- The height (y position) of the camera is +2. 
-- The camera is always looking at the origin.
----------------------------------------------------------------------------*/
+- Rotating the cube by ArcBall interface (by left mouse button dragging)
+- Applying image texture (../images/textures/woodWall3.png) to each face of the cube
+-----------------------------------------------------------------------------------*/
 
-import { resizeAspectRatio, Axes } from '/util/util.js';
-import { Shader, readShaderFile } from '/util/shader.js';
-import { SquarePyramid } from '/util/squarePyramid.js';
-
+import { resizeAspectRatio, Axes } from '../util/util.js';
+import { Shader, readShaderFile } from '../util/shader.js';
+import { SquarePyramid } from './squarePyramid.js';
+import { Arcball } from '../util/arcball.js';
+import { loadTexture } from '../util/texture.js';
 const canvas = document.getElementById('glCanvas');
 const gl = canvas.getContext('webgl2');
 let shader;
-let startTime;
-let lastFrameTime;
-
 let isInitialized = false;
-
 let viewMatrix = mat4.create();
 let projMatrix = mat4.create();
-let modelMatrix = mat4.create(); 
-const cameraCircleRadius = 3.0;
-const cameraCircleHeight = 5.0;
-const cameraCircleHeightAmplitude = 5.0;
-const cameraCircleSpeedHorizontal = 90.0; 
-const cameraCircleSpeedVertical = 45.0;
+let modelMatrix = mat4.create();
+const axes = new Axes(gl, 1.5); // create an Axes object with the length of axis 1.5
+const texture = loadTexture(gl, true, './sunrise.jpg'); // see ../util/texture.js
 const pyramid = new SquarePyramid(gl);
-const axes = new Axes(gl, 1.8);
+
+// Arcball object
+const arcball = new Arcball(canvas, 5.0, { rotation: 2.0, zoom: 0.0005 });
 
 document.addEventListener('DOMContentLoaded', () => {
     if (isInitialized) {
@@ -58,7 +52,7 @@ function initWebGL() {
     canvas.height = 700;
     resizeAspectRatio(gl, canvas);
     gl.viewport(0, 0, canvas.width, canvas.height);
-    gl.clearColor(0.7, 0.8, 0.9, 1.0);
+    gl.clearColor(0.1, 0.2, 0.3, 1.0);
     
     return true;
 }
@@ -71,72 +65,69 @@ async function initShader() {
 
 function render() {
 
-    const currentTime = Date.now();
-
-    // deltaTime: elapsed time from the last frame
-    const deltaTime = (currentTime - lastFrameTime) / 1000.0; // convert to second
-
-    // elapsed time from the start time
-    const elapsedTime = (currentTime - startTime) / 1000.0; // convert to second
-
-    lastFrameTime = currentTime;
-
-    // Clear canvas
+    // clear canvas
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     gl.enable(gl.DEPTH_TEST);
 
-    // Model transformation matrix
-    // mat4.rotateX(modelMatrix, modelMatrix, glMatrix.toRadian(deltaTime * 50));
+    // get view matrix from the arcball
+    viewMatrix = arcball.getViewMatrix();
 
-    // Viewing transformation matrix
-    let camX = 0                  + cameraCircleRadius * Math.sin(glMatrix.toRadian(cameraCircleSpeedHorizontal * elapsedTime));
-    let camY = cameraCircleHeight + (cameraCircleHeightAmplitude) * Math.sin(glMatrix.toRadian(cameraCircleSpeedVertical * elapsedTime));
-    let camZ = 0                  + cameraCircleRadius * Math.cos(glMatrix.toRadian(cameraCircleSpeedHorizontal * elapsedTime));
-    mat4.lookAt(viewMatrix, 
-        vec3.fromValues(camX, camY, camZ), // camera position
-        vec3.fromValues(0, 0, 0), // look at origin
-        vec3.fromValues(0, 1, 0)); // up vector
-
-    // drawing the cube
-    shader.use();  // using the cube's shader
+    // drawing the pyramid
+    shader.use();  // using the pyramid's shader
     shader.setMat4('u_model', modelMatrix);
     shader.setMat4('u_view', viewMatrix);
     shader.setMat4('u_projection', projMatrix);
     pyramid.draw(shader);
 
-    // drawing the axes (using the axes's shader)
+    // drawing the axes (using the axes's shader: see util.js)
     axes.draw(viewMatrix, projMatrix);
 
+    // call the render function the next time for animation
     requestAnimationFrame(render);
 }
 
 async function main() {
     try {
         if (!initWebGL()) {
-            throw new Error('WebGL initialization failed');
+            throw new Error('WebGL 초기화 실패');
         }
         
         await initShader();
 
-        // Projection transformation matrix
+        // View transformation matrix (the whole world is translated to -3 in z-direction)
+        // Camera is at (0, 0, 0) and looking at negative z-direction
+        mat4.translate(viewMatrix, viewMatrix, vec3.fromValues(0, 0, -3));
+
+        // Projection transformation matrix (invariant in the program)
         mat4.perspective(
             projMatrix,
             glMatrix.toRadian(60),  // field of view (fov, degree)
             canvas.width / canvas.height, // aspect ratio
             0.1, // near
-            100.0 // far
+            1000.0 // far
         );
 
-        // starting time (global variable) for animation
-        startTime = lastFrameTime = Date.now();
+        // activate the texture unit 0
+        // in fact, we can omit this command
+        // when we use the only one texture
+        gl.activeTexture(gl.TEXTURE0);
+
+        // bind the texture to the shader
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+
+        // pass the u_texture uniform variable to the shader
+        // with the texture unit number
+        shader.setInt('u_texture', 0);
 
         // call the render function the first time for animation
         requestAnimationFrame(render);
 
         return true;
+
     } catch (error) {
         console.error('Failed to initialize program:', error);
         alert('Failed to initialize program');
         return false;
     }
 }
+
