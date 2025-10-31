@@ -10,6 +10,15 @@
     - 'f' to switch to flat shading
 - Applying Diffuse & Specular reflection using Flat/Smooth shading to the cylinder
 ----------------------------------------------------------------------------------*/
+
+/**
+ * Homework 07 변경점
+ * 1. Shader 객체를 Gouraud shader와 Phong shader로 나누어서 셰이더 프로그램을 생성
+ * 2. interpolatingMode를 통해서 PHONG과 GOURAUD 모드를 관리
+ * 3. 사용자 입력에 따라서 interpolatingMode가 변하면 전역 shader 객체에 현재 모드에 맞는 셰이더를 할당
+ * 4. shader가 변경되면 uniform buffer를 다시 업데이트해야하니 updateUniforms()함수를 통해 매 프레임 업데이트
+ */
+
 import { resizeAspectRatio, setupText, updateText} from '../util/util.js';
 import { Shader, readShaderFile } from '../util/shader.js';
 import { Cube } from '../util/cube.js';
@@ -200,14 +209,15 @@ async function main() {
         await initGouraudShader();
         await initLampShader();
 
+        /**
+         * 생성 직후 초기화
+         */
         if (shadingMode == 'FLAT') cone.copyFaceNormalsToNormals();
         else cone.copyVertexNormalsToNormals();
         cone.updateNormals();
 
         if (interpolatingMode == 'GOURAUD') shader = gouraudShader;
         else shader = phongShader;
-
-
 
         lampShader.use();
         lampShader.setMat4("u_projection", projMatrix);
