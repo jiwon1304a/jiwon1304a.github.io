@@ -1,212 +1,190 @@
-/*--------------------------------------------------------------------------------
-20_DirectionalLight.js
+// directional, spot, point light 이외에도 hemisphere, area light 등이 있음
 
-- Viewing a 3D unit cylinder at origin with perspective projection
-- Rotating the cylinder by ArcBall interface (by left mouse button dragging)
-- Keyboard controls:
-    - 'a' to switch between camera and model rotation modes in ArcBall interface
-    - 'r' to reset arcball
-    - 's' to switch to smooth shading
-    - 'f' to switch to flat shading
-- Lighting by directional light
-----------------------------------------------------------------------------------*/
-import { resizeAspectRatio, setupText, updateText, Axes } from '../util/util.js';
-import { Shader, readShaderFile } from '../util/shader.js';
-import { Arcball } from '../util/arcball.js';
-import { Cylinder } from '../util/cylinder.js';
+import * as THREE from 'three';  
+import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+import { initStats, initRenderer, initCamera, initOrbitControls, addHouseAndTree } from './util.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-const canvas = document.getElementById('glCanvas');
-const gl = canvas.getContext('webgl2');
-let shader;
-let textOverlay2;
-let textOverlay3;
-let isInitialized = false;
+const scene = new THREE.Scene();
 
-let viewMatrix = mat4.create();
-let projMatrix = mat4.create();
-let modelMatrix = mat4.create();
-let arcBallMode = 'CAMERA';     // 'CAMERA' or 'MODEL'
-let toonLevel = 5;
+const stats = initStats();
+const renderer = initRenderer();
+let camera = initCamera();
+// let camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100000);
 
-const cylinder = new Cylinder(gl, 32, { color: [1, 0.5, 0, 1.0] });
-const axes = new Axes(gl, 1.5); // create an Axes object with the length of axis 1.5
+// let orbitControls = initOrbitControls(camera, renderer);
 
-const cameraPos = vec3.fromValues(0, 0, 3);
-const lightDirection = vec3.fromValues(-1.0, -0.25, -0.5); // (1.0, 0.25, 0.5)에서 원점으로
-const shininess = 32.0;
+let orbitControls = new OrbitControls(camera, renderer.domElement);
+orbitControls.enableDamping = true;
 
+const clock = new THREE.Clock();
 
-// Arcball object: initial distance 5.0, rotation sensitivity 2.0, zoom sensitivity 0.0005
-// default of rotation sensitivity = 1.5, default of zoom sensitivity = 0.001
-const arcball = new Arcball(canvas, 5.0, { rotation: 2.0, zoom: 0.0005 });
+// 행성 정보를 담은 클래스
+class Planet {
+  constructor(name, radius, distance, color, texture, rotationSpeed, orbitSpeed) {
+    this.name = name;
+    this.radius = radius;
+    this.distance = distance;
+    this.color = color;
+    this.texture = texture;
+    this.rotationSpeed = rotationSpeed; // 자전 속도
+    this.orbitSpeed = orbitSpeed; // 공전 속도
+    this.angle = Math.random() * Math.PI * 2; // 초기 각도 설정
 
-document.addEventListener('DOMContentLoaded', () => {
-    if (isInitialized) {
-        console.log("Already initialized");
-        return;
+    const geometry = new THREE.SphereGeometry(this.radius, 32, 32);
+
+    const loader = new THREE.TextureLoader();
+    let map = null;
+    if (this.texture) {
+      map = loader.load(this.texture);
+      // map.encoding = THREE.sRGBEncoding;
     }
 
-    main().then(success => {
-        if (!success) {
-            console.log('program terminated');
-            return;
-        }
-        isInitialized = true;
-    }).catch(error => {
-        console.error('program terminated with error:', error);
+    const material = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(this.color || 0xffffff), // 예: 0x88aaff 또는 "#88aaff"
+      map: map
     });
-});
 
-function setupKeyboardEvents() {
-    document.addEventListener('keydown', (event) => {
-        if (event.key == 'a') {
-            if (arcBallMode == 'CAMERA') {
-                arcBallMode = 'MODEL';
-            }
-            else {
-                arcBallMode = 'CAMERA';
-            }
-            updateText(textOverlay2, "arcball mode: " + arcBallMode);
-        }
-        else if (event.key == 'r') {
-            arcball.reset();
-            modelMatrix = mat4.create(); 
-            arcBallMode = 'CAMERA';
-            updateText(textOverlay2, "arcball mode: " + arcBallMode);
-        }
-        else if (event.key == '1') {
-            toonLevel = 1;
-            updateText(textOverlay3, "toon levels: " + toonLevel);
-        }
-        else if (event.key == '2') {
-            toonLevel = 2;
-            updateText(textOverlay3, "toon levels: " + toonLevel);
-        }
-        else if (event.key == '3') {
-            toonLevel = 3;
-            updateText(textOverlay3, "toon levels: " + toonLevel);
-        }
-        else if (event.key == '4') {
-            toonLevel = 4;
-            updateText(textOverlay3, "toon levels: " + toonLevel);
-        }
-        else if (event.key == '5') {
-            toonLevel = 5;
-            updateText(textOverlay3, "toon levels: " + toonLevel);
-        }
-    });
-}
-
-function initWebGL() {
-    if (!gl) {
-        console.error('WebGL 2 is not supported by your browser.');
-        return false;
+    if (this.name === 'Sun') {
+      material.emissive = new THREE.Color(this.color || 0xffffff);
+      material.emissiveIntensity = 1.5;
     }
 
-    canvas.width = 700;
-    canvas.height = 700;
-    resizeAspectRatio(gl, canvas);
-    gl.viewport(0, 0, canvas.width, canvas.height);
-    gl.clearColor(0.1, 0.1, 0.1, 1.0);
-    
-    return true;
+    this.mesh = new THREE.Mesh(geometry, material);
+    this.mesh.position.x = this.distance;
+    scene.add(this.mesh);
+  }
+
+  update(deltaTime) {
+    // 자전
+    this.mesh.rotation.y += this.rotationSpeed * deltaTime;
+
+    // 공전
+    this.angle += this.orbitSpeed * deltaTime;
+    this.mesh.position.x = this.distance * Math.cos(this.angle);
+    this.mesh.position.z = this.distance * Math.sin(this.angle);
+  }
 }
 
-async function initShader() {
-    const vertexShaderSource = await readShaderFile('shVert.glsl');
-    const fragmentShaderSource = await readShaderFile('shFrag.glsl');
-    shader = new Shader(gl, vertexShaderSource, fragmentShaderSource);
-}
+// 렌더링 변수들
+
+
+// 행성
+let sun = new Planet('Sun', 10, 0, 0xffff00, null, 0.0005, 0);
+let mercury = new Planet('Mercury', 1.5, 20, 0xa6a6a6, './Mercury.jpg', 0.02, 0.02);
+let venus = new Planet('Venus', 3, 35, 0xe39e1c, './Venus.jpg', 0.015, 0.015);
+let earth = new Planet('Earth', 3.5, 50, 0x3498db, './Earth.jpg', 0.01, 0.01);
+let mars = new Planet('Mars', 2.5, 65, 0xc0392b, './Mars.jpg', 0.008, 0.008);
+
+
+
+
+// add a simple scene
+// addHouseAndTree(scene)
+
+// add subtle ambient lighting
+const ambientLight = new THREE.AmbientLight("#FFFFFF");
+scene.add(ambientLight);
+
+// add a directional light
+const directionalLight = new THREE.DirectionalLight(0xffffff, 0.3);
+directionalLight.position.set(10, 20, 20);
+scene.add(directionalLight);
+
+// add a point light
+const pointColor = "#FFFFFF";
+const pointIntensity = 100;
+const pointDecay = 200;
+const pointLight = new THREE.PointLight(pointColor, pointIntensity, 0, pointDecay);
+pointLight.castShadow = true;
+scene.add(pointLight);
+
+
+const controls = setupControls();
+
+render();
 
 function render() {
-    // clear canvas
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-    gl.enable(gl.DEPTH_TEST);
+  stats.update();
+  orbitControls.update();
 
-    if (arcBallMode == 'CAMERA') {
-        viewMatrix = arcball.getViewMatrix();
-    }
-    else { // arcBallMode == 'MODEL'
-        modelMatrix = arcball.getModelRotMatrix();
-        viewMatrix = arcball.getViewCamDistanceMatrix();
-    }
+  const delta = clock.getDelta() * 300;
 
-    shader.use();
+  sun.update(delta);
+  mercury.update(delta);
+  venus.update(delta);
+  earth.update(delta);
+  mars.update(delta);
 
-    // Toon level을 위한 uniform buffer
-    shader.setInt("toonLevel", toonLevel);
-
-    // drawing the cylinder
-    shader.setMat4('u_model', modelMatrix);
-    shader.setMat4('u_view', viewMatrix);
-    shader.setVec3('u_viewPos', cameraPos);
-    cylinder.draw(shader);
-
-    // drawing the axes (using the axes's shader: see util.js)
-    axes.draw(viewMatrix, projMatrix);
-
-    // call the render function the next time for animation
-    requestAnimationFrame(render);
+  // render using requestAnimationFrame
+  requestAnimationFrame(render);
+  renderer.render(scene, camera);
 }
 
-async function main() {
-    try {
-        if (!initWebGL()) {
-            throw new Error('WebGL initialization failed');
+function setupControls() {
+  const controls = new function () {
+    this.perspective = "Perspective";
+    this.switchCamera = function () {
+        if (camera instanceof THREE.PerspectiveCamera) {
+            scene.remove(camera);
+            camera = null; // 기존의 camera 제거    
+            // OrthographicCamera(left, right, top, bottom, near, far)
+            camera = new THREE.OrthographicCamera(window.innerWidth / -16, 
+                window.innerWidth / 16, window.innerHeight / 16, window.innerHeight / -16, -200, 500);
+            camera.position.x = 120;
+            camera.position.y = 60;
+            camera.position.z = 180;
+            camera.lookAt(scene.position);
+            orbitControls.dispose(); // 기존의 orbitControls 제거
+            orbitControls = null;
+            orbitControls = new OrbitControls(camera, renderer.domElement);
+            orbitControls.enableDamping = true;
+            this.perspective = "Orthographic";
+        } else {
+            scene.remove(camera);
+            camera = null; 
+            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.x = 120;
+            camera.position.y = 60;
+            camera.position.z = 180;
+            camera.lookAt(scene.position);
+            orbitControls.dispose(); // 기존의 orbitControls 제거
+            orbitControls = null;
+            orbitControls = new OrbitControls(camera, renderer.domElement);
+            orbitControls.enableDamping = true;
+            this.perspective = "Perspective";
         }
-        
-        // View transformation matrix (camera at cameraPos, invariant in the program)
-        mat4.lookAt(
-            viewMatrix, 
-            cameraPos, 
-            vec3.fromValues(0, 0, 0), 
-            vec3.fromValues(0, 1, 0)
-        );
+    };
 
-        // Projection transformation matrix (invariant in the program)
-        mat4.perspective(
-            projMatrix,
-            glMatrix.toRadian(60),  // field of view (fov, degree)
-            canvas.width / canvas.height, // aspect ratio
-            0.1, // near
-            100.0 // far
-        );
+    this.mercuryRotation = mercury.rotationSpeed;
+    this.venusRotation = venus.rotationSpeed;
+    this.earthRotation = earth.rotationSpeed;
+    this.marsRotation = mars.rotationSpeed;
 
-        // creating shaders
-        await initShader();
+    this.mercuryOrbit = mercury.orbitSpeed;
+    this.venusOrbit = venus.orbitSpeed;
+    this.earthOrbit = earth.orbitSpeed;
+    this.marsOrbit = mars.orbitSpeed;
 
-        shader.use();
-        shader.setMat4("u_projection", projMatrix);
-        shader.setVec3("light.direction", lightDirection);
-        shader.setVec3("light.ambient", vec3.fromValues(0.2, 0.2, 0.2));
-        shader.setVec3("light.diffuse", vec3.fromValues(0.7, 0.7, 0.7));
-        shader.setVec3("light.specular", vec3.fromValues(1.0, 1.0, 1.0));
-        shader.setInt("material.diffuse", 0);
-        shader.setVec3("material.specular", vec3.fromValues(0.8, 0.8, 0.8));
-        shader.setFloat("material.shininess", shininess);
-        shader.setVec3("u_viewPos", cameraPos);
+  };
 
-        setupText(canvas, "TOON SHADING", 1);
-        textOverlay2 = setupText(canvas, "arcball mode: " + arcBallMode, 2);
-        textOverlay3 = setupText(canvas, "toon levels: " + toonLevel, 3);
-        setupText(canvas, "press a/r to change/reset arcball mode", 4);
-        setupText(canvas, "press 1 - 5 to change toon shading levels", 5);
+  const gui = new GUI();
 
-        // Update initial shading mode for smooth shading
-        cylinder.copyVertexNormalsToNormals();
-        cylinder.updateNormals();
+  gui.add(controls, 'switchCamera');
+  gui.add(controls, 'perspective').listen();
 
-        setupKeyboardEvents();
+  function addPlanetFolder(name, planet) {
+    const folder = gui.addFolder(name);
+    folder.add(planet, 'rotationSpeed', 0, 0.05).name('Rotation Speed');
+    folder.add(planet, 'orbitSpeed', 0, 0.05).name('Orbit Speed');
+    folder.open();
+    return folder;
+  }
 
-        // call the render function the first time for animation
-        requestAnimationFrame(render);
+  addPlanetFolder('Mercury', mercury);
+  addPlanetFolder('Venus', venus);
+  addPlanetFolder('Earth', earth);
+  addPlanetFolder('Mars', mars);
 
-        return true;
-
-    } catch (error) {
-        console.error('Failed to initialize program:', error);
-        alert('Failed to initialize program');
-        return false;
-    }
+  return controls;
 }
-

@@ -1,19 +1,28 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html>
+
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>20_DirectionalLight</title>
+    <meta charset="utf-8">
     <style>
         body {
             margin: 0;
-            overflow: hidden; /* scrollbar 제거 */
+            overflow: hidden;
         }
     </style>
+    <!-- CDN (Content Delivery Network)을 사용, importmap 설정 -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.159.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.159.0/examples/jsm/"
+        }
+    }
+    </script>
+    <script type="module" src="./util.js"></script>
+    <script type="module" src="./script.js"></script>
 </head>
+
 <body>
-    <canvas id="glCanvas"></canvas>
-    <script src="../util/gl-matrix-min.js"></script>
-    <script type="module" src="script.js"></script>
 </body>
+
 </html>
